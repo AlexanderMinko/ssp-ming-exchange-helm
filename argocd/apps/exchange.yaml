@@ -12,7 +12,10 @@ spec:
     path: charts/exchange
     helm:
       valueFiles:
-        - ../exchange/values.yaml # relative to path → resolves to charts/envs/dev/exchange.yaml
+        # Relative to spec.source.path → charts/exchange/values.yaml (the chart baseline).
+        # Helm loads it by default anyway; listed explicitly so the intent is visible.
+        # charts/envs/<env>/ overlays are deliberately NOT used by Argo CD (manual helm only).
+        - values.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: production # pre-created by Terraform (platform/)

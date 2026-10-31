@@ -41,6 +41,8 @@ argocd/                # Argo CD Application / App-of-Apps manifests (what to sy
 
 - **Two INDEPENDENT charts, not a subchart dependency.** app↔DB is a *runtime* coupling (the app
   retries until Mongo answers), not a *deployment* one. Two releases into the **same** namespace.
+- **Argo CD loads each chart's `values.yaml` ONLY** (`valueFiles: [values.yaml]`). CI's `bump-config` job writes
+  `exchange.image.tag` there. The `envs/` overlays are NOT wired into Argo — manual `helm` runs only.
 - **Per-env values layering:** chart `values.yaml` = baseline; `envs/<env>/<chart>.yaml` = deltas via
   `-f`. Merge rules: maps deep-merge, scalars replace, **lists replace wholesale** (an env
   `route.hostnames` overrides the baseline list entirely — it does not append).

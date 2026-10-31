@@ -2,9 +2,10 @@
 # Layered on top of charts/exchange/values.yaml. Only override what differs from the baseline.
 # Deploy: helm upgrade --install exchange charts/exchange -n production -f charts/envs/dev/exchange.yaml
 
+# NOTE: Argo CD does NOT load this file (argocd/apps/exchange.yaml uses values.yaml only).
+# No image.tag here on purpose — the CI-bumped tag in charts/exchange/values.yaml must win.
+
 exchange:
-  image:
-    tag: main # matches what CI pushes on a main build (CI/ArgoCD will own this later)
   autoscaling:
     minReplicas: 1
     maxReplicas: 3
