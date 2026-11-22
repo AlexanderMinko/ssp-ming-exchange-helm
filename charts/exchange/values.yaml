@@ -37,13 +37,22 @@ config:
   MONGO_PARAMS: "?authSource=admin"
   SPRING_THREADS_VIRTUAL_ENABLED: "true"
   EXCHANGE_CONFIG_REFRESH_MS: "30000"
+  BIDDERS_BASE_URL: "http://bidders:8080" # the bidders Service (charts/bidders, same namespace); bidder endpoints are paths on it
   EXCHANGE_BIDDER_CONNECT_TIMEOUT_MS: "100"
-  EXCHANGE_BIDDER_READ_TIMEOUT_MS: "1000"
-  MANAGEMENT_ENDPOINTS_EXPOSURE: "health,info,metrics"
+  EXCHANGE_BIDDER_READ_TIMEOUT_MS: "400" # = the largest bidder window (tmax clamp 450 - 50); keep >= it, ends only hung calls
+  MANAGEMENT_ENDPOINTS_EXPOSURE: "health,info,metrics,prometheus" # prometheus → /actuator/prometheus for the ServiceMonitor
   OTLP_METRICS_ENABLED: "false"
-  OTLP_ENDPOINT: "http://localhost:4318"
-  TRACING_ENABLED: "false"
-  TRACING_SAMPLING_PROBABILITY: "1.0"
+  OTLP_ENDPOINT: "http://signoz-otel-collector.signoz.svc.cluster.local:4318" # SigNoz collector (terraform platform/07-signoz.tf); the app appends /v1/traces
+  TRACING_ENABLED: "false" # flip to "true" once SigNoz runs; every request is traced (no sampling, decided 21/11/2026)
+  TRACING_SAMPLING_PROBABILITY: "1.0" # keep 1.0; lower only for a Gatling load run (ClickHouse PVC is 20Gi)
+
+# Prometheus scrape (PULL). The ServiceMonitor CRD comes from kube-prometheus-stack (platform/),
+# so it must be installed before this chart syncs. Prometheus selects every ServiceMonitor
+# (serviceMonitorSelectorNilUsesHelmValues=false), so no `release:` label is needed.
+serviceMonitor:
+  enabled: true
+  path: /actuator/prometheus
+  interval: 15s
 
 # The app does NOT own a Gateway/ALB — it attaches an HTTPRoute to the SHARED gateway (platform/).
 route:

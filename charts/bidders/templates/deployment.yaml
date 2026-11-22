@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bidders.fullname" . }}
+  labels:
+    {{- include "bidders.labels" . | nindent 4 }}
+spec:
+  # Fixed replicas (no HPA) — safe to keep in the manifest: nothing else writes this field.
+  replicas: {{ .Values.bidders.replicas }}
+  selector:
+    matchLabels:
+      {{- include "bidders.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "bidders.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: bidders
+          image: "{{ .Values.bidders.image.repository }}:{{ .Values.bidders.image.tag }}"
+          ports:
+            - containerPort: {{ .Values.bidders.containerPort }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "bidders.fullname" . }}-config
+            - secretRef:
+                name: {{ include "bidders.fullname" . }}-secret
+          resources:
+            {{- toYaml .Values.bidders.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: {{ .Values.bidders.containerPort }}
+            initialDelaySeconds: 15
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: {{ .Values.bidders.containerPort }}
+            initialDelaySeconds: 30
+            periodSeconds: 10

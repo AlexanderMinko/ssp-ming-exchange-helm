@@ -2,6 +2,7 @@
 
 - **`exchange/`** — the SSP/Exchange app + edge (`Gateway`/`HTTPRoute`) + `exchange-secret`.
 - **`mongodb/`** — single-node MongoDB + `mongodb-secret`.
+- **`bidders/`** — dummy DSP bidders (in-cluster only, no `HTTPRoute`) + `bidders-secret`. Own DB `ssp-bidders` on the same Mongo. No `envs/` files: deploy with the baseline.
 
 **Two independent releases** (not a subchart). They're deployed separately because the app handles
 its DB dependency at runtime (retries until Mongo answers) — there's no *deployment* coupling, only

@@ -9,12 +9,14 @@ by doing things *for* the human — this is a learning project; understanding is
 
 ---
 
-## The three repos (know which one you're in)
+## The five repos (know which one you're in)
 
 | Repo | Owns | Notes |
 |------|------|-------|
 | **App repo** — `AlexanderMinko/SSP-Exchange` | Spring Boot app code, `Dockerfile`, CI workflow | On push, GitHub Actions builds the image (OIDC, no static keys) and pushes to **ECR** |
 | **Infra repo** — the Terraform repo (`infra/` + `platform/`) | The EKS cluster, platform add-ons, and the Argo CD install itself | Two Terraform state layers; Terraform installs Argo CD, Argo CD manages workloads (not itself) |
+| **Bidders repo** — `ssp-ming-bidders` (no remote yet) | Dummy DSP bidders the exchange calls in-cluster | Its chart lives in THIS repo: `charts/bidders/` |
+| **Dashboards repo** — `ssp-ming-monitoring` (no remote yet) | Grafana dashboard JSON + a tiny chart (ConfigMaps for the sidecar) | Synced by `argocd/apps/grafana-dashboards.yaml` into `monitoring`; the chart lives THERE, not here |
 | **This repo** (config) | Helm charts + per-env values + Argo CD `Application` manifests | The **only** thing Argo CD reads to decide what runs |
 
 **Deploy flow = push + pull:**
@@ -33,6 +35,9 @@ charts/
   exchange/            # the SSP/Exchange app: Deployment, Service, HPA, ConfigMap,
                        #   ExternalSecret, HTTPRoute + TargetGroupConfiguration, NOTES, _helpers
   mongodb/             # single-node MongoDB StatefulSet + headless Service + ExternalSecret
+  bidders/             # dummy DSP bidders: Deployment (fixed replicas, no HPA), Service `bidders`,
+                       #   ConfigMap, ExternalSecret, ServiceMonitor. In-cluster only — no HTTPRoute. Own DB `ssp-bidders`
+                       #   on the shared mongodb; image from ECR repo eks-dev/bidders
   envs/
     dev/  exchange.yaml  mongodb.yaml     # per-env DELTAS only (layered over chart values.yaml)
     prod/ exchange.yaml  mongodb.yaml
@@ -43,6 +48,12 @@ argocd/                # Argo CD Application / App-of-Apps manifests (what to sy
   retries until Mongo answers), not a *deployment* one. Two releases into the **same** namespace.
 - **Argo CD loads each chart's `values.yaml` ONLY** (`valueFiles: [values.yaml]`). CI's `bump-config` job writes
   `exchange.image.tag` there. The `envs/` overlays are NOT wired into Argo — manual `helm` runs only.
+- **Observability stack = Start.io's** (decided 16/11/2026, replaces LGTM): **VictoriaMetrics** for metrics (`victoria-metrics-k8s-stack`: VM operator, `vmagent`, `vmsingle`, Grafana), **SigNoz on ClickHouse** for logs and traces (SigNoz `otel-agent` DaemonSet tails `/var/log/pods`; apps send traces over OTLP to the SigNoz collector). Nodes = 3 × `t3.large`.
+- **App metrics = PULL** (decided 13/11/2026; backend VictoriaMetrics since 16/11/2026): apps expose `/actuator/prometheus` (`micrometer-registry-prometheus`); `vmagent` scrapes them via a `ServiceMonitor` in each app chart (the VM operator converts it to a `VMServiceScrape`; locally: a scrape job in `ssp-ming-exchange/observability/prometheus.yml`, read by the Compose VictoriaMetrics single). OTLP metrics push stays in the code but off. Why: `up` distinguishes dead from idle, `pod`/`namespace` labels come free, matches the KEDA query (Phase 15, PromQL against VictoriaMetrics).
+- **Traces = every request, no sampling** (decided 21/11/2026; ssp-backend's design minus its sampling): apps push OTLP/HTTP straight to `signoz-otel-collector.signoz:4318` (`OTLP_ENDPOINT`, no default in `application.yaml`; local value in `application-local.yaml`). `TracingConfig` in each app: a `Sampler` that keeps parent decisions and starts a trace only from a SERVER span (drops `@Scheduled` roots), and an `ObservationPredicate` that skips `/actuator/**`. Exchange → bidders `traceparent` is kept on purpose (unlike ssp-backend, our DSPs are ours). `TRACING_SAMPLING_PROBABILITY` stays 1.0; lower it only for a Gatling run (ClickHouse PVC 20Gi). The `k8s-infra` agent parses the JSON lines and lifts MDC `traceId`/`spanId` into the log record (`trace_parser`), so logs link to traces. `TRACING_ENABLED` is still `false` in the charts until SigNoz runs. `management.tracing.export.enabled` stays `true` always: Boot builds the W3C propagator only under it, so with it `false` no `traceparent` is read or sent and each service mints its own trace id (found 21/11/2026). `TRACING_ENABLED` (default `true`) maps to `management.tracing.export.otlp.enabled` and only switches sending spans.
+- **Grafana dashboards = git** (decided 22/11/2026): repo `ssp-ming-monitoring` holds `dashboards/<folder>/<uid>.json`, the only source (neither Grafana persists anything). Local Compose Grafana bind-mounts it (file provider, UI edits allowed; `scripts/pull.sh <uid>` writes them back, or they die with the container). EKS: Argo CD app `grafana-dashboards` (helm repo `argocd/apps/`) renders the repo's chart into one ConfigMap per dashboard in `monitoring` (label `grafana_dashboard=1`, annotation `grafana_folder`), loaded read-only by the VM stack's Grafana sidecar (`folderAnnotation` + `foldersFromFilesStructure` set in `platform/06-monitoring.tf`). Datasource uid `VictoriaMetrics` in both Grafanas (the chart's uid; the local one changed from `victoriametrics`). `scripts/check.sh` lints.
+- **Every location an app needs must be in its chart's `config:`** — app code has no defaults for hosts/URLs
+  (see the umbrella `CLAUDE.md`), so a missing key crashes the pod at startup rather than calling `localhost`.
 - **Per-env values layering:** chart `values.yaml` = baseline; `envs/<env>/<chart>.yaml` = deltas via
   `-f`. Merge rules: maps deep-merge, scalars replace, **lists replace wholesale** (an env
   `route.hostnames` overrides the baseline list entirely — it does not append).

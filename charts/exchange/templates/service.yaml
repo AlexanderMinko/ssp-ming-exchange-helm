@@ -8,5 +8,6 @@ spec:
   selector:
     {{- include "exchange.selectorLabels" . | nindent 4 }}
   ports:
-    - port: {{ .Values.exchange.containerPort }}
+    - name: http # the ServiceMonitor refers to this port BY NAME
+      port: {{ .Values.exchange.containerPort }}
       targetPort: {{ .Values.exchange.containerPort }}

@@ -21,7 +21,7 @@ exchange:
 config:
   OTLP_METRICS_ENABLED: "true"
   TRACING_ENABLED: "true"
-  TRACING_SAMPLING_PROBABILITY: "0.1" # sample 10% in prod (1.0 would be too costly under load)
+  # No TRACING_SAMPLING_PROBABILITY override: every request is traced (decided 21/11/2026).
 
 # Give prod its own hostname so routes don't collide once other apps share the gateway.
 route:
