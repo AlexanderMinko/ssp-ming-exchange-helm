@@ -11,6 +11,11 @@ spec:
     name: {{ include "exchange.fullname" . }}
   defaultConfiguration:
     targetType: ip
+    # The ALB's own health check, separate from the kubelet's probes. Default path is `/`, where the exchange has no
+    # handler → 404 → target `unhealthy` (Target.ResponseCodeMismatch). Readiness is the right question for the ALB:
+    # "should this pod get traffic?" — it goes false during shutdown and while Mongo is unreachable.
+    healthCheckConfig:
+      healthCheckPath: {{ .Values.route.healthCheckPath }}
 ---
 # HTTPRoute is app-owned; it ATTACHES to the shared Gateway (platform/), it doesn't create one.
 apiVersion: gateway.networking.k8s.io/v1

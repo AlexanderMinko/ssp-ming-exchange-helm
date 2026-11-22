@@ -40,7 +40,7 @@ config:
   MANAGEMENT_ENDPOINTS_EXPOSURE: "health,info,metrics,prometheus" # prometheus → /actuator/prometheus for the ServiceMonitor
   OTLP_METRICS_ENABLED: "false"
   OTLP_ENDPOINT: "http://signoz-otel-collector.signoz.svc.cluster.local:4318" # SigNoz collector (terraform platform/07-signoz.tf); the app appends /v1/traces
-  TRACING_ENABLED: "false" # flip to "true" once SigNoz runs; every request is traced (no sampling, decided 21/11/2026)
+  TRACING_ENABLED: "true" # spans → SigNoz collector (OTLP_ENDPOINT); every request is traced (no sampling, decided 21/11/2026; on since 22/11/2026)
   TRACING_SAMPLING_PROBABILITY: "1.0" # keep 1.0; lower only for a Gatling load run (ClickHouse PVC is 20Gi)
 # Prometheus scrape (PULL). The ServiceMonitor CRD comes from kube-prometheus-stack (platform/),
 # so it must be installed before this chart syncs. Prometheus selects every ServiceMonitor
@@ -56,3 +56,4 @@ route:
   gatewayNamespace: edge
   sectionName: http
   hostnames: [] # set per-app hostnames once multiple apps share the gateway (avoid route collisions)
+  healthCheckPath: /actuator/health/readiness # ALB target health (TargetGroupConfiguration); the default `/` returns 404
