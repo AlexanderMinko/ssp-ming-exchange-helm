@@ -6,17 +6,15 @@
 # Unset it for release-scoped names (<release>-exchange).
 nameOverride: ""
 fullnameOverride: exchange
-
 externalSecrets:
   enabled: true
   clusterSecretStore: aws-secretsmanager
   remoteKey: eks-dev/exchange/mongodb # same source secret the mongodb chart uses
   refreshInterval: 1h
-
 exchange:
   image:
     repository: 140023370575.dkr.ecr.eu-central-1.amazonaws.com/eks-dev/exchange
-    tag: 0.0.3 # OWNED BY CI — the app repo's bump-config job rewrites this on every release
+    tag: 0.0.12 # OWNED BY CI — the app repo's bump-config job rewrites this on every release
   containerPort: 8080
   resources:
     requests:
@@ -29,7 +27,6 @@ exchange:
     minReplicas: 1
     maxReplicas: 3
     cpuUtilization: 70
-
 # Non-secret config → ConfigMap (consumed via envFrom).
 config:
   MONGO_HOSTS: "mongodb:27017" # the mongodb Service (deployed by charts/mongodb, same namespace)
@@ -45,7 +42,6 @@ config:
   OTLP_ENDPOINT: "http://signoz-otel-collector.signoz.svc.cluster.local:4318" # SigNoz collector (terraform platform/07-signoz.tf); the app appends /v1/traces
   TRACING_ENABLED: "false" # flip to "true" once SigNoz runs; every request is traced (no sampling, decided 21/11/2026)
   TRACING_SAMPLING_PROBABILITY: "1.0" # keep 1.0; lower only for a Gatling load run (ClickHouse PVC is 20Gi)
-
 # Prometheus scrape (PULL). The ServiceMonitor CRD comes from kube-prometheus-stack (platform/),
 # so it must be installed before this chart syncs. Prometheus selects every ServiceMonitor
 # (serviceMonitorSelectorNilUsesHelmValues=false), so no `release:` label is needed.
@@ -53,7 +49,6 @@ serviceMonitor:
   enabled: true
   path: /actuator/prometheus
   interval: 15s
-
 # The app does NOT own a Gateway/ALB — it attaches an HTTPRoute to the SHARED gateway (platform/).
 route:
   enabled: true
