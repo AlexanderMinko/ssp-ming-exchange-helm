@@ -13,9 +13,9 @@ by doing things *for* the human — this is a learning project; understanding is
 
 | Repo | Owns | Notes |
 |------|------|-------|
-| **App repo** — `AlexanderMinko/SSP-Exchange` | Spring Boot app code, `Dockerfile`, CI workflow | On push, GitHub Actions builds the image (OIDC, no static keys) and pushes to **ECR** |
+| **App repo** — `AlexanderMinko/ssp-ming-exchange` | Spring Boot app code, `Dockerfile`, CI workflow | On push, GitHub Actions builds the image (OIDC, no static keys) and pushes to **ECR** |
 | **Infra repo** — the Terraform repo (`infra/` + `platform/`) | The EKS cluster, platform add-ons, and the Argo CD install itself | Two Terraform state layers; Terraform installs Argo CD, Argo CD manages workloads (not itself) |
-| **Bidders repo** — `ssp-ming-bidders` (no remote yet) | Dummy DSP bidders the exchange calls in-cluster | Its chart lives in THIS repo: `charts/bidders/` |
+| **Bidders repo** — `AlexanderMinko/ssp-ming-bidders` | Dummy DSP bidders the exchange calls in-cluster | Its chart lives in THIS repo: `charts/bidders/` |
 | **Dashboards repo** — `ssp-ming-monitoring` (no remote yet) | Grafana dashboard JSON + a tiny chart (ConfigMaps for the sidecar) | Synced by `argocd/apps/grafana-dashboards.yaml` into `monitoring`; the chart lives THERE, not here |
 | **This repo** (config) | Helm charts + per-env values + Argo CD `Application` manifests | The **only** thing Argo CD reads to decide what runs |
 
@@ -75,7 +75,7 @@ Don't recreate these — the charts attach to them:
   Source secret `eks-dev/exchange/mongodb` is created **out-of-band** (never in git/Terraform state).
   ESO maps that one source → `mongodb-secret` (raw `MONGO_INITDB_ROOT_*`) and `exchange-secret` (remapped
   to `MONGO_USER`/`MONGO_PASSWORD`).
-- **Registry:** ECR repo `eks-dev/app` (`140023370575.dkr.ecr.eu-central-1.amazonaws.com/eks-dev/app`), **IMMUTABLE** tags.
+- **Registry:** ECR repo `eks-dev/exchange` (`140023370575.dkr.ecr.eu-central-1.amazonaws.com/eks-dev/exchange`, renamed from `eks-dev/app` 22/11/2026), **IMMUTABLE** tags.
 - **Auth model:** **Pod Identity** everywhere for pod→AWS; **OIDC** only for GitHub Actions→AWS (it's CI, not a pod).
 
 ---

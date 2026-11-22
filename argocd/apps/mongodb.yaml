@@ -7,7 +7,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/AlexanderMinko/ssp-exchange-helm.git
+    repoURL: https://github.com/AlexanderMinko/ssp-ming-exchange-helm.git
     targetRevision: main
     path: charts/mongodb
     helm:

@@ -27,15 +27,22 @@ spec:
                 name: {{ include "bidders.fullname" . }}-secret
           resources:
             {{- toYaml .Values.bidders.resources | nindent 12 }}
+          # startupProbe holds back liveness/readiness until the app has started once. Liquibase migrates at
+          # startup on a 250m CPU request, so a cold start can pass 60 s — the old liveness delay (30 s + 3 × 10 s)
+          # would kill the pod mid-migration and loop it. Budget here: 30 × 5 s = 150 s.
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: {{ .Values.bidders.containerPort }}
+            periodSeconds: 5
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
               port: {{ .Values.bidders.containerPort }}
-            initialDelaySeconds: 15
             periodSeconds: 5
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
               port: {{ .Values.bidders.containerPort }}
-            initialDelaySeconds: 30
             periodSeconds: 10
