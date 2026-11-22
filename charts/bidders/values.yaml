@@ -6,13 +6,11 @@
 # http://bidders:8080 (exchange config BIDDERS_BASE_URL) — renaming breaks that link.
 nameOverride: ""
 fullnameOverride: bidders
-
 externalSecrets:
   enabled: true
   clusterSecretStore: aws-secretsmanager
   remoteKey: eks-dev/exchange/mongodb # same source secret as the mongodb + exchange charts (root creds)
   refreshInterval: 1h
-
 bidders:
   image:
     # Own ECR repo: eks-dev/exchange holds the exchange's 0.0.<run> tags and is IMMUTABLE → tags would collide.
@@ -28,7 +26,6 @@ bidders:
     limits:
       cpu: "1"
       memory: "768Mi"
-
 # Non-secret config → ConfigMap (consumed via envFrom). MONGO_USER/MONGO_PASSWORD come from the Secret.
 config:
   MONGO_HOSTS: "mongodb:27017" # the mongodb Service (charts/mongodb, same namespace)
@@ -41,7 +38,6 @@ config:
   OTLP_ENDPOINT: "http://signoz-otel-collector.signoz.svc.cluster.local:4318" # SigNoz collector (terraform platform/07-signoz.tf); the app appends /v1/traces
   TRACING_ENABLED: "false" # flip to "true" once SigNoz runs; every request is traced (no sampling, decided 21/11/2026)
   TRACING_SAMPLING_PROBABILITY: "1.0" # keep 1.0; lower only for a Gatling load run (ClickHouse PVC is 20Gi)
-
 # Prometheus scrape (PULL). The ServiceMonitor CRD comes from kube-prometheus-stack (platform/),
 # so it must be installed before this chart syncs. Prometheus selects every ServiceMonitor
 # (serviceMonitorSelectorNilUsesHelmValues=false), so no `release:` label is needed.
