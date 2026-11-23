@@ -27,6 +27,21 @@ spec:
       labels:
         {{- include "exchange.selectorLabels" . | nindent 8 }}
     spec:
+      # Never on ClickHouse's node (decided 23/11/2026). In the 23/11 EKS run ClickHouse (SigNoz) used 1.2–2 cores
+      # next to an exchange pod on a 2-vCPU node: 100% CPU, GC pauses ~480 ms, a 2–3× longer tail. Required, not
+      # preferred: a preferred rule gives way exactly when nodes are full. The exchange declares it (not ClickHouse):
+      # ClickHouse's EBS volume pins it to one AZ, so constraining ClickHouse could leave it nowhere to run.
+      # IgnoredDuringExecution: checked only at scheduling; a running pod is never evicted by this rule.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: signoz
+              labelSelector:
+                matchLabels:
+                  clickhouse.altinity.com/chi: signoz-clickhouse
       containers:
         - name: exchange
           image: "{{ .Values.exchange.image.repository }}:{{ .Values.exchange.image.tag }}"

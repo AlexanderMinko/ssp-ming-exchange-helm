@@ -117,6 +117,10 @@ Don't recreate these — the charts attach to them:
 - **Exchange rollout = remove first, then add** (`strategy.rollingUpdate` `maxSurge: 0`, `maxUnavailable: 1`, decided
   23/11/2026). The default adds a pod before removing one; on a full cluster that pod stayed `Pending`, the old pod was
   never removed, and two versions served traffic. Cost: one fewer pod during a rollout — don't roll during a load run.
+- **Exchange never shares a node with ClickHouse** (required `podAntiAffinity` on `clickhouse.altinity.com/chi=signoz-clickhouse`
+  in namespace `signoz`, decided 23/11/2026). On 23/11 ClickHouse used 1.2–2 cores next to an exchange pod on a 2-vCPU node.
+  The exchange declares it, not ClickHouse: ClickHouse's EBS volume pins it to one AZ. If SigNoz renames its
+  ClickHouseInstallation, this selector silently matches nothing — check it on SigNoz chart upgrades.
 - **StatefulSet rolling updates deadlock on an already-not-Ready pod** — you must `kubectl delete pod` to
   force recreation from the new spec.
 - **YAML style:** block style everywhere in first-party manifests (no inline `{ }` flow maps); leave
