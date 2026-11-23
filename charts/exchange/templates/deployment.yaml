@@ -6,6 +6,15 @@ metadata:
     {{- include "exchange.labels" . | nindent 4 }}
 spec:
   # replicas omitted — the HPA owns it (ArgoCD-safe, Phase 12)
+  # Rollout: remove one old pod first, then add its replacement (decided 23/11/2026). The default (maxSurge 25% → 1,
+  # maxUnavailable 25% → 0 with 2 pods) adds a pod BEFORE removing one, so it needs room for an extra pod. On a full
+  # cluster that pod stays Pending, the old pod is never removed, and the rollout deadlocks with two versions serving
+  # (23/11/2026). Cost: during a rollout one fewer pod serves — don't roll during a load run.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       {{- include "exchange.selectorLabels" . | nindent 6 }}

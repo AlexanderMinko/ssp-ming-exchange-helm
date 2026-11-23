@@ -22,15 +22,18 @@ exchange:
   # 2-vCPU nodes it would cut the JVM to 1 CPU (1 virtual-thread carrier).
   # Memory: request == limit, so the scheduler reserves what the pod really uses (heap = 75% of the limit) and the
   # kubelet doesn't pick it first under node memory pressure (it evicts pods above their request first).
+  # 700m, not 1000m (23/11/2026): with 1000m no node had room (free per node 150–790m of 1930m, fragmented by the
+  # platform pods), so the rollout's new pod stayed Pending. With no CPU limit the request only decides placement and
+  # the HPA target (70% → 490m a pod); the pod still uses idle node CPU. Re-derive from the next run's measured use.
   resources:
     requests:
-      cpu: "1000m"
+      cpu: "700m"
       memory: "1Gi"
     limits:
       memory: "1Gi"
   # replicas is HPA-owned (omitted from the Deployment). minReplicas 2 (decided 23/11/2026): on 22/11 one pod took the
-  # whole ramp and the HPA added cold pods mid-run. Target = 70% of the 1000m request = 700m a pod, so 2 pods carry
-  # ~500 rps without scaling. A 3rd pod needs a free 1000m on one node; with 3 × t3.large and no Karpenter it may stay
+  # whole ramp and the HPA added cold pods mid-run. Target = 70% of the 700m request = 490m a pod, so 2 pods should carry
+  # ~500 rps without scaling (to verify). A 3rd pod needs a free 700m on one node; with 4 × t3.large (since 23/11/2026) and no Karpenter it may stay
   # Pending (check `kubectl get pods -n production` during a run).
   autoscaling:
     minReplicas: 2
