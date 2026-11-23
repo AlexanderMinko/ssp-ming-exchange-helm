@@ -15,7 +15,7 @@ bidders:
   image:
     # Own ECR repo: eks-dev/exchange holds the exchange's 0.0.<run> tags and is IMMUTABLE → tags would collide.
     repository: 140023370575.dkr.ecr.eu-central-1.amazonaws.com/eks-dev/bidders
-    tag: 0.0.1 # OWNED BY CI once the bidders repo has a bump-config job
+    tag: 0.0.3 # OWNED BY CI once the bidders repo has a bump-config job
   # Fixed replica count, no HPA: Liquibase migrates at startup and the simulator needs one bidder pod.
   replicas: 1
   containerPort: 8080
