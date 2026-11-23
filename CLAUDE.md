@@ -35,7 +35,7 @@ charts/
   exchange/            # the SSP/Exchange app: Deployment, Service, HPA, ConfigMap,
                        #   ExternalSecret, HTTPRoute + TargetGroupConfiguration, NOTES, _helpers
   mongodb/             # single-node MongoDB StatefulSet + headless Service + ExternalSecret
-  bidders/             # dummy DSP bidders: Deployment (fixed replicas, no HPA), Service `bidders`,
+  bidders/             # dummy DSP bidders: Deployment (2 fixed replicas, no HPA), Service `bidders`,
                        #   ConfigMap, ExternalSecret, ServiceMonitor. In-cluster only — no HTTPRoute. Own DB `ssp-bidders`
                        #   on the shared mongodb; image from ECR repo eks-dev/bidders
   envs/
@@ -50,7 +50,7 @@ argocd/                # Argo CD Application / App-of-Apps manifests (what to sy
   `exchange.image.tag` there. The `envs/` overlays are NOT wired into Argo — manual `helm` runs only.
 - **Observability stack = Start.io's** (decided 16/11/2026, replaces LGTM): **VictoriaMetrics** for metrics (`victoria-metrics-k8s-stack`: VM operator, `vmagent`, `vmsingle`, Grafana), **SigNoz on ClickHouse** for logs and traces (SigNoz `otel-agent` DaemonSet tails `/var/log/pods`; apps send traces over OTLP to the SigNoz collector). Nodes = 3 × `t3.large`.
 - **App metrics = PULL** (decided 13/11/2026; backend VictoriaMetrics since 16/11/2026): apps expose `/actuator/prometheus` (`micrometer-registry-prometheus`); `vmagent` scrapes them via a `ServiceMonitor` in each app chart (the VM operator converts it to a `VMServiceScrape`; locally: a scrape job in `ssp-ming-exchange/observability/prometheus.yml`, read by the Compose VictoriaMetrics single). OTLP metrics push stays in the code but off. Why: `up` distinguishes dead from idle, `pod`/`namespace` labels come free, matches the KEDA query (Phase 15, PromQL against VictoriaMetrics).
-- **Traces = every request, no sampling** (decided 21/11/2026; ssp-backend's design minus its sampling): apps push OTLP/HTTP straight to `signoz-otel-collector.signoz:4318` (`OTLP_ENDPOINT`, no default in `application.yaml`; local value in `application-local.yaml`). `TracingConfig` in each app: a `Sampler` that keeps parent decisions and starts a trace only from a SERVER span (drops `@Scheduled` roots), and an `ObservationPredicate` that skips `/actuator/**`. Exchange → bidders `traceparent` is kept on purpose (unlike ssp-backend, our DSPs are ours). `TRACING_SAMPLING_PROBABILITY` stays 1.0; lower it only for a Gatling run (ClickHouse PVC 20Gi). The `k8s-infra` agent parses the JSON lines and lifts MDC `traceId`/`spanId` into the log record (`trace_parser`), so logs link to traces. `TRACING_ENABLED` is `true` in both charts (flipped 22/11/2026, once SigNoz ran on EKS). `management.tracing.export.enabled` stays `true` always: Boot builds the W3C propagator only under it, so with it `false` no `traceparent` is read or sent and each service mints its own trace id (found 21/11/2026). `TRACING_ENABLED` (default `true`) maps to `management.tracing.export.otlp.enabled` and only switches sending spans.
+- **Traces = 10% of requests, whole traces** (decided 21/11/2026 as every request, ssp-backend's design minus its sampling; sampling 0.1 on EKS since 23/11/2026): apps push OTLP/HTTP straight to `signoz-otel-collector.signoz:4318` (`OTLP_ENDPOINT`, no default in `application.yaml`; local value in `application-local.yaml`). `TracingConfig` in each app: a `Sampler` that keeps parent decisions and starts a trace only from a SERVER span (drops `@Scheduled` roots), and an `ObservationPredicate` that skips `/actuator/**`. Exchange → bidders `traceparent` is kept on purpose (unlike ssp-backend, our DSPs are ours). `TRACING_SAMPLING_PROBABILITY` is 0.1 in both charts (23/11/2026: at 1.0 and 500 rps, about 3,500 spans/s, ClickHouse fell behind and the SigNoz collector buffered 5.3 GB until it was evicted); the app default stays 1.0 for the laptop. The sampler is parent-based and the exchange's server span is every trace's root, so the exchange's value decides for the whole trace: 10% of auctions are traced completely, bidders included. The bidders' per-bid `BID_EVENTS` log line is off in the chart (`BID_EVENTS_LOG_LEVEL: OFF`); the exchange's `AUCTION_EVENTS` line stays. The `k8s-infra` agent parses the JSON lines and lifts MDC `traceId`/`spanId` into the log record (`trace_parser`), so logs link to traces. `TRACING_ENABLED` is `true` in both charts (flipped 22/11/2026, once SigNoz ran on EKS). `management.tracing.export.enabled` stays `true` always: Boot builds the W3C propagator only under it, so with it `false` no `traceparent` is read or sent and each service mints its own trace id (found 21/11/2026). `TRACING_ENABLED` (default `true`) maps to `management.tracing.export.otlp.enabled` and only switches sending spans.
 - **Grafana dashboards = git** (decided 22/11/2026): repo `ssp-ming-monitoring` holds `dashboards/<folder>/<uid>.json`, the only source (neither Grafana persists anything). Local Compose Grafana bind-mounts it (file provider, UI edits allowed; `scripts/pull.sh <uid>` writes them back, or they die with the container). EKS: Argo CD app `grafana-dashboards` (helm repo `argocd/apps/`) renders the repo's chart into one ConfigMap per dashboard in `monitoring` (label `grafana_dashboard=1`, annotation `grafana_folder`), loaded read-only by the VM stack's Grafana sidecar (`folderAnnotation` + `foldersFromFilesStructure` set in `platform/06-monitoring.tf`). Datasource uid `VictoriaMetrics` in both Grafanas (the chart's uid; the local one changed from `victoriametrics`). `scripts/check.sh` lints.
 - **Every location an app needs must be in its chart's `config:`** — app code has no defaults for hosts/URLs
   (see the umbrella `CLAUDE.md`), so a missing key crashes the pod at startup rather than calling `localhost`.
@@ -95,9 +95,25 @@ Don't recreate these — the charts attach to them:
 - **Headless Service DNS = Ready endpoints only.** A `0/1` StatefulSet pod publishes no DNS record, so
   clients get "Name or service not known." Debug the pod's readiness, not DNS. (Mongo's `mongosh` readiness
   probe needs `timeoutSeconds` ≥ 5 — the k8s default of 1s is too short for mongosh cold-start.)
-- **A ConfigMap change restarts nothing by itself** — `envFrom` is read only at container start, and the charts have
-  no `checksum/config` annotation (owner's choice, 22/11/2026). After a `config:`-only change, Argo CD shows Synced
-  while pods keep the old values: run `kubectl -n production rollout restart deploy/<app>`.
+- **A ConfigMap change restarts nothing by itself** — `envFrom` is read only at container start. So every pod template
+  that consumes a ConfigMap carries `checksum/config` (sha256 of the rendered `configmap.yaml`; exchange and bidders,
+  decided 23/11/2026, Helm's "Automatically Roll Deployments" pattern): a `config:` change alters the pod template and
+  Argo CD's sync rolls the pods. Add it to any new chart with a ConfigMap. It does NOT cover the ESO-written Secrets
+  (Helm never renders their values): after a Secrets Manager change, `kubectl -n production rollout restart deploy/<app>`.
+- **JVM heap = 75% of the memory limit, exit on OOM** (`JDK_JAVA_OPTIONS: "-XX:MaxRAMPercentage=75
+  -XX:+ExitOnOutOfMemoryError"` in each app chart's `config:`, decided 23/11/2026). The JVM default of 25% gave 260 MB
+  (exchange) and 195 MB (bidders); the bidders hit `OutOfMemoryError` in the 22/11 EKS run and lived on with a dead
+  Tomcat acceptor. `JDK_JAVA_OPTIONS`, not `JAVA_TOOL_OPTIONS`: only the `java` launcher reads it, so `jcmd` in the pod
+  doesn't inherit the flag.
+- **App resources: CPU request, NO CPU limit; memory request == limit** (decided 23/11/2026, as ssp-backend's
+  OPS-9881). A CPU limit only throttles (85–93% of periods during warm-up on 22/11); without one, pods use idle node
+  CPU and still get their request under contention. Memory request == limit so the scheduler reserves the real use
+  and the kubelet doesn't evict the pod first under memory pressure. No `-XX:ActiveProcessorCount` (ssp-backend pins it
+  to the request): on 2-vCPU nodes it would cut the JVM to 1 CPU. Exchange 1000m / 1Gi, HPA 2–3 at 70%; bidders 2 × 500m / 768Mi.
+  The node group is fixed (3 × `t3.large`, 5.79 allocatable cores, no Karpenter): a pod that doesn't fit stays `Pending`.
+- **Probes: slow ≠ dead** (decided 23/11/2026). Both app charts: a startup probe (30 × 5 s = 150 s), readiness
+  timeout 2 s × 3 failures (out of rotation, no restart), liveness timeout 5 s × 6 failures × 10 s (restart only after
+  ~60 s without an answer). The defaults (timeout 1 s, 3 failures) restarted pods 4 times under load in the 22/11 run.
 - **StatefulSet rolling updates deadlock on an already-not-Ready pod** — you must `kubectl delete pod` to
   force recreation from the new spec.
 - **YAML style:** block style everywhere in first-party manifests (no inline `{ }` flow maps); leave

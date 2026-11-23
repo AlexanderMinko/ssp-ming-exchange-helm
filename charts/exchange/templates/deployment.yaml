@@ -11,6 +11,10 @@ spec:
       {{- include "exchange.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      annotations:
+        # Roll the pods when the config changes: envFrom is read only at container start, so a ConfigMap-only change
+        # would otherwise leave them on the old values. Helm's documented pattern ("Automatically Roll Deployments").
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
       labels:
         {{- include "exchange.selectorLabels" . | nindent 8 }}
     spec:
@@ -26,15 +30,30 @@ spec:
                 name: {{ include "exchange.fullname" . }}-secret
           resources:
             {{- toYaml .Values.exchange.resources | nindent 12 }}
+          # Probes (decided 23/11/2026, after the 22/11 EKS run): liveness = "stuck for good" → restart;
+          # readiness = "slow right now" → out of rotation, no restart. With timeout 1 s and 3 failures, a GC pause or
+          # CPU throttling got pods killed after ~30 s, and each restart made the overload worse.
+          # startupProbe holds back the other two until the app has started once: 30 × 5 s = 150 s budget,
+          # instead of a fixed initialDelaySeconds that a cold start under load can overrun.
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: {{ .Values.exchange.containerPort }}
+            periodSeconds: 5
+            failureThreshold: 30
+          # Out of rotation after ~15 s of failed checks (3 × 5 s); 2 s per check.
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
               port: {{ .Values.exchange.containerPort }}
-            initialDelaySeconds: 15
             periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          # Restarted only after ~60 s without an answer (6 × 10 s); 5 s per check covers a long GC pause.
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
               port: {{ .Values.exchange.containerPort }}
-            initialDelaySeconds: 30
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
