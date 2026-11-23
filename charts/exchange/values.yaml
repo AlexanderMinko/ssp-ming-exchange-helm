@@ -14,7 +14,7 @@ externalSecrets:
 exchange:
   image:
     repository: 140023370575.dkr.ecr.eu-central-1.amazonaws.com/eks-dev/exchange
-    tag: 0.0.12 # OWNED BY CI — the app repo's bump-config job rewrites this on every release
+    tag: 0.0.14 # OWNED BY CI — the app repo's bump-config job rewrites this on every release
   containerPort: 8080
   resources:
     requests:
