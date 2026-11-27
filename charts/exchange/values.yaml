@@ -20,7 +20,7 @@ exchange:
   # pods were throttled in 85-93% of periods during warm-up, stretching GC pauses past 1 s. Without it the pod uses idle
   # node CPU; under contention the kernel still guarantees every pod its request. No -XX:ActiveProcessorCount: on
   # 2-vCPU nodes it would cut the JVM to 1 CPU (1 virtual-thread carrier).
-  # Memory: request == limit, so the scheduler reserves what the pod really uses (heap = 75% of the limit) and the
+  # Memory: request == limit, so the scheduler reserves what the pod really uses (heap = 60% of the limit, plus non-heap) and the
   # kubelet doesn't pick it first under node memory pressure (it evicts pods above their request first).
   # 700m, not 1000m (23/11/2026): with 1000m no node had room (free per node 150–790m of 1930m, fragmented by the
   # platform pods), so the rollout's new pod stayed Pending. With no CPU limit the request only decides placement and
@@ -45,11 +45,16 @@ config:
   MONGO_DATABASE_NAME: "ssp-exchange"
   MONGO_PARAMS: "?authSource=admin"
   SPRING_THREADS_VIRTUAL_ENABLED: "true"
-  # Heap = 75% of the memory limit (JVM default 25%: 260 MB at 1Gi; GC pauses up to 1.3 s on 22/11/2026).
+  # Heap = 60% of the memory limit (~614 MB at 1Gi). JVM default 25% (260 MB): GC pauses up to 1.3 s on 22/11/2026.
+  # 75% (778 MB) on 23/11: the working set sat at 956–979 MiB of 1024 — the bidders' OOMKill pattern, a hair away.
+  # The other 40% is for metaspace, code cache, thread stacks, GC and native memory. (ssp-backend: 55%, with ZGC.)
   # ExitOnOutOfMemoryError: an OOM ends the process at once (Kubernetes restarts it) instead of leaving it half-alive
   # with dead threads until liveness gives up.
   # JDK_JAVA_OPTIONS, not JAVA_TOOL_OPTIONS: only the `java` launcher reads it, so `jcmd` in the pod keeps a small heap.
-  JDK_JAVA_OPTIONS: "-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
+  # UseG1GC (26/11/2026): without a flag the JVM picks the Serial GC in a container below 1,792 MiB, one thread that
+  # stops every request while it runs. The kind run of 25/11 had Serial pauses of 0.7-1.2 s (exchange and bidders
+  # together: a 3.9 s request). G1 collects young generations with several threads and marks the old one concurrently.
+  JDK_JAVA_OPTIONS: "-XX:+UseG1GC -XX:MaxRAMPercentage=60 -XX:+ExitOnOutOfMemoryError"
   EXCHANGE_CONFIG_REFRESH_MS: "30000"
   BIDDERS_BASE_URL: "http://bidders:8080" # the bidders Service (charts/bidders, same namespace); bidder endpoints are paths on it
   EXCHANGE_BIDDER_CONNECT_TIMEOUT_MS: "100"
